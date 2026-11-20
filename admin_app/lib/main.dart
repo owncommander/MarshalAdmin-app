@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'admin_api.dart';
 
 void main() { WidgetsFlutterBinding.ensureInitialized(); runApp(const MarshalAdmin()); }
 
@@ -31,14 +32,21 @@ class AdminHome extends StatefulWidget { const AdminHome({super.key}); @override
 class _AdminHomeState extends State<AdminHome> {
   static const secure = FlutterSecureStorage();
   final pin = TextEditingController();
+  final ownerUsername = TextEditingController(text: 'owner');
+  final api = AdminApi();
+  bool get remoteMode => api.connected;
   final search = TextEditingController();
   List<Customer> customers = [];
   bool ready = false, unlocked = false, creatingPin = false, busy = false;
   String filter = 'all';
   @override void initState() { super.initState(); _load(); }
-  @override void dispose() { pin.dispose(); search.dispose(); super.dispose(); }
+  @override void dispose() { pin.dispose(); ownerUsername.dispose(); search.dispose(); super.dispose(); }
 
   Future<void> _load() async {
+    if (remoteMode) {
+      if (mounted) setState(() { creatingPin = false; ready = true; });
+      return;
+    }
     final storedPin = await secure.read(key: 'owner_pin');
     final prefs = await SharedPreferences.getInstance();
     final saved = prefs.getString('customers_v1');
@@ -50,6 +58,18 @@ class _AdminHomeState extends State<AdminHome> {
   Future<void> _unlock() async {
     if (busy) return;
     final value = pin.text.trim();
+    if (remoteMode) {
+      if (value.isEmpty || ownerUsername.text.trim().isEmpty) { _message('أدخل اسم المستخدم وكلمة المرور'); return; }
+      setState(() => busy = true);
+      try {
+        await api.login(ownerUsername.text.trim(), value);
+        final rows = await api.listTenants();
+        if (mounted) setState(() { customers = rows.map(Customer.fromMap).toList(); unlocked = true; });
+        pin.clear();
+      } catch (e) { if (mounted) _message(e.toString().replaceFirst('Exception: ', '')); }
+      finally { if (mounted) setState(() => busy = false); }
+      return;
+    }
     if (value.length < 8) { _message('كلمة المرور لازم تكون 8 أحرف على الأقل'); return; }
     setState(() => busy = true);
     try {
@@ -58,7 +78,25 @@ class _AdminHomeState extends State<AdminHome> {
       pin.clear();
     } finally { if (mounted) setState(() => busy = false); }
   }
+  Future<void> _refreshRemote() async {
+    if (!remoteMode) return;
+    final rows = await api.listTenants();
+    if (mounted) setState(() => customers = rows.map(Customer.fromMap).toList());
+  }
+  Future<void> _setFlag(Customer c, {bool? visible, bool? active}) async {
+    if (remoteMode) {
+      try {
+        await api.updateTenant(c.code, {if (visible != null) 'visible': visible, if (active != null) 'active': active});
+        await _refreshRemote();
+        if (mounted) _message('تم حفظ التغيير على السيرفر');
+      } catch (e) { if (mounted) _message(e.toString().replaceFirst('Exception: ', '')); }
+    } else {
+      setState(() { if (visible != null) c.visible = visible; if (active != null) c.active = active; });
+      await _save();
+    }
+  }
   Future<void> _save() async {
+    if (remoteMode) return;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('customers_v1', jsonEncode(customers.map((e) => e.toMap()).toList()));
   }
@@ -82,6 +120,18 @@ class _AdminHomeState extends State<AdminHome> {
     code.dispose(); name.dispose();
     if (c.isEmpty || n.isEmpty) { _message('أدخل الكود والاسم'); return; }
     if (item == null && customers.any((e) => e.code == c)) { _message('كود العميل موجود بالفعل'); return; }
+    if (remoteMode) {
+      try {
+        if (item == null) {
+          await api.createTenant({'code': c, 'name': n, 'medical': medical, 'visible': false, 'active': false});
+        } else {
+          await api.updateTenant(c, {'name': n, 'medical': medical});
+        }
+        await _refreshRemote();
+        if (mounted) _message('تم حفظ العميل على السيرفر');
+      } catch (e) { if (mounted) _message(e.toString().replaceFirst('Exception: ', '')); }
+      return;
+    }
     setState(() { if (item == null) { customers.add(Customer(code: c, name: n, medical: medical)); } else { item.name = n; item.medical = medical; } });
     await _save();
     _message('تم الحفظ على هذا الهاتف فقط');
@@ -94,12 +144,13 @@ class _AdminHomeState extends State<AdminHome> {
       child: Padding(padding: const EdgeInsets.all(24), child: Column(mainAxisSize: MainAxisSize.min, children: [
         Image.asset('assets/marshal_logo.jpg', height: 86), const SizedBox(height: 12),
         const Text('MarPatients Admin', style: TextStyle(fontSize: 23, fontWeight: FontWeight.w800)),
-        const SizedBox(height: 8), Text(creatingPin ? 'إنشاء كلمة مرور المالك لأول مرة' : 'دخول المالك فقط', style: const TextStyle(color: Colors.black54)),
+        const SizedBox(height: 8), Text(remoteMode ? 'حساب المالك — التحقق عبر السيرفر' : (creatingPin ? 'إنشاء كلمة مرور المالك لأول مرة' : 'دخول المالك فقط'), style: const TextStyle(color: Colors.black54)),
+        if (remoteMode) ...[const SizedBox(height: 18), TextField(controller: ownerUsername, decoration: const InputDecoration(border: OutlineInputBorder(), labelText: 'اسم حساب المالك'))],
         const SizedBox(height: 20), TextField(controller: pin, obscureText: true, textInputAction: TextInputAction.done,
           onSubmitted: (_) => _unlock(), decoration: const InputDecoration(border: OutlineInputBorder(), labelText: 'كلمة مرور الإدارة')),
         const SizedBox(height: 14), SizedBox(width: double.infinity, child: FilledButton(onPressed: busy ? null : _unlock,
-          child: Text(creatingPin ? 'إنشاء حساب المالك' : 'دخول'))),
-        const SizedBox(height: 12), const Text('نسخة تجريبية محلية. لا توجد مزامنة مع هواتف المرضى.', textAlign: TextAlign.center, style: TextStyle(fontSize: 12, color: Colors.black54)),
+          child: Text(!remoteMode && creatingPin ? 'إنشاء كلمة مرور محلية' : 'دخول'))),
+        const SizedBox(height: 12), Text(remoteMode ? 'اتصال آمن بخدمة المجمعات. الحساب يُتحقق منه على السيرفر.' : 'نسخة تجريبية محلية. لا توجد مزامنة مع هواتف المرضى.', textAlign: TextAlign.center, style: const TextStyle(fontSize: 12, color: Colors.black54)),
       ])),
     )))))));
   Widget _dashboard() {
@@ -107,12 +158,13 @@ class _AdminHomeState extends State<AdminHome> {
     final rows = customers.where((c) => (filter == 'all' || (filter == 'medical' && c.medical) || (filter == 'visible' && c.visible)) &&
       (q.isEmpty || c.name.toLowerCase().contains(q) || c.code.contains(q))).toList();
     return Scaffold(appBar: AppBar(title: const Text('إدارة مجمعات Marshal', style: TextStyle(fontWeight: FontWeight.bold)), actions: [
-      IconButton(tooltip: 'قفل', onPressed: () => setState(() => unlocked = false), icon: const Icon(Icons.lock_outline))]),
+      if (remoteMode) IconButton(tooltip: 'تحديث القائمة', onPressed: () async { try { await _refreshRemote(); } catch (e) { if (mounted) _message(e.toString()); } }, icon: const Icon(Icons.refresh)),
+      IconButton(tooltip: 'قفل', onPressed: () { api.logout(); setState(() => unlocked = false); }, icon: const Icon(Icons.lock_outline))]),
       floatingActionButton: FloatingActionButton.extended(onPressed: () => _edit(), icon: const Icon(Icons.add), label: const Text('عميل جديد')),
       body: Column(children: [
         Container(width: double.infinity, padding: const EdgeInsets.fromLTRB(16, 8, 16, 14), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           const Text('لوحة المالك', style: TextStyle(fontSize: 24, fontWeight: FontWeight.w800)),
-          const SizedBox(height: 5), const Text('التغييرات محفوظة على هذا الهاتف فقط، وليست منشورة للمرضى.', style: TextStyle(color: Colors.deepOrange, fontSize: 12)),
+          const SizedBox(height: 5), Text(remoteMode ? 'البيانات متصلة بالسيرفر. يظهر للمريض المجمع الطبي الظاهر والمفعّل فقط.' : 'التغييرات محفوظة على هذا الهاتف فقط، وليست منشورة للمرضى.', style: const TextStyle(color: Colors.deepOrange, fontSize: 12)),
           const SizedBox(height: 14), Row(children: [
             _metric('العملاء', customers.length), const SizedBox(width: 8),
             _metric('طبي', customers.where((c) => c.medical).length), const SizedBox(width: 8),
@@ -136,8 +188,8 @@ class _AdminHomeState extends State<AdminHome> {
                 Text('كود داخلي: ${c.code}', style: const TextStyle(fontSize: 11, color: Colors.black45))])),
               IconButton(tooltip: 'تعديل', icon: const Icon(Icons.edit_outlined), onPressed: () => _edit(item: c))]),
             const Divider(height: 18), Row(children: [
-              Expanded(child: Row(children: [const Text('إظهار'), Switch(value: c.visible, onChanged: (v) async { setState(() => c.visible = v); await _save(); })])),
-              Expanded(child: Row(children: [const Text('تفعيل'), Switch(value: c.active, onChanged: (v) async { setState(() => c.active = v); await _save(); })])),
+              Expanded(child: Row(children: [const Text('إظهار'), Switch(value: c.visible, onChanged: (v) => _setFlag(c, visible: v))])),
+              Expanded(child: Row(children: [const Text('تفعيل'), Switch(value: c.active, onChanged: (v) => _setFlag(c, active: v))])),
             ]),
           ])));
         }))
