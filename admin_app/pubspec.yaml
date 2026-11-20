@@ -1,0 +1,16 @@
+name: marpatients_admin
+description: Marshal owner-only local admin prototype
+publish_to: none
+version: 1.0.0+1
+environment:
+  sdk: '>=3.4.0 <4.0.0'
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_secure_storage: ^9.2.4
+  shared_preferences: ^2.3.3
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/complexes.json
+    - assets/marshal_logo.jpg
