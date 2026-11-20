@@ -20,6 +20,19 @@ jobs:
       - name: Generate Android shell
         working-directory: admin_app
         run: flutter create --platforms android --project-name marpatients_admin --org com.marshalenterprise .
+      - name: Allow HTTPS API access on Android
+        working-directory: admin_app
+        run: |
+          python3 - <<'PYCODE'
+          from pathlib import Path
+          p = Path('android/app/src/main/AndroidManifest.xml')
+          s = p.read_text()
+          if 'android.permission.INTERNET' not in s:
+              start = s.index('<manifest')
+              pos = s.index('>', start) + 1
+              s = s[:pos] + '\n    <uses-permission android:name="android.permission.INTERNET" />' + s[pos:]
+              p.write_text(s)
+          PYCODE
       - name: Set display name and original icon
         working-directory: admin_app
         run: |
@@ -38,7 +51,11 @@ jobs:
         run: flutter pub get
       - name: Build admin APK
         working-directory: admin_app
-        run: flutter build apk --release
+        env:
+          MAR_API_URL: ${{ vars.MAR_API_URL }}
+        run: |
+          if [ -z "$MAR_API_URL" ]; then echo "DEMO MODE: MAR_API_URL not set; changes stay on device"; fi
+          flutter build apk --release --dart-define=MAR_API_URL="$MAR_API_URL"
       - name: Upload Admin APK
         uses: actions/upload-artifact@v4
         with:
