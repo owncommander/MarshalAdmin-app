@@ -1,0 +1,47 @@
+name: Build MarPatients Admin APK
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, master]
+    paths:
+      - 'admin_app/**'
+      - '.github/workflows/build-admin-apk.yml'
+jobs:
+  build-admin:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - name: Generate Android shell
+        working-directory: admin_app
+        run: flutter create --platforms android --project-name marpatients_admin --org com.marshalenterprise .
+      - name: Set display name and original icon
+        working-directory: admin_app
+        run: |
+          python3 - <<'PYCODE'
+          from pathlib import Path
+          import shutil, re
+          p = Path('android/app/src/main/AndroidManifest.xml')
+          p.write_text(re.sub(r'android:label="[^"]*"', 'android:label="MarPatients Admin"', p.read_text(), count=1))
+          for source in Path('assets/icons').glob('mipmap-*/ic_launcher.png'):
+              dest = Path('android/app/src/main/res') / source.parent.name / 'ic_launcher.png'
+              dest.parent.mkdir(parents=True, exist_ok=True)
+              shutil.copyfile(source, dest)
+          PYCODE
+      - name: Install dependencies
+        working-directory: admin_app
+        run: flutter pub get
+      - name: Build admin APK
+        working-directory: admin_app
+        run: flutter build apk --release
+      - name: Upload Admin APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: MarPatients-Admin-APK
+          path: admin_app/build/app/outputs/flutter-apk/app-release.apk
+          retention-days: 14
