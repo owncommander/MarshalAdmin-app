@@ -20,27 +20,18 @@ jobs:
       - name: Generate Android shell
         working-directory: admin_app
         run: flutter create --platforms android --project-name marpatients_admin --org com.marshalenterprise .
-      - name: Allow HTTPS API access on Android
-        working-directory: admin_app
-        run: |
-          python3 - <<'PYCODE'
-          from pathlib import Path
-          p = Path('android/app/src/main/AndroidManifest.xml')
-          s = p.read_text()
-          if 'android.permission.INTERNET' not in s:
-              start = s.index('<manifest')
-              pos = s.index('>', start) + 1
-              s = s[:pos] + '\n    <uses-permission android:name="android.permission.INTERNET" />' + s[pos:]
-              p.write_text(s)
-          PYCODE
-      - name: Set display name and original icon
+      - name: Configure Android manifest and icon
         working-directory: admin_app
         run: |
           python3 - <<'PYCODE'
           from pathlib import Path
           import shutil, re
           p = Path('android/app/src/main/AndroidManifest.xml')
-          p.write_text(re.sub(r'android:label="[^"]*"', 'android:label="MarPatients Admin"', p.read_text(), count=1))
+          s = p.read_text()
+          if 'android.permission.INTERNET' not in s:
+              pos = s.index('>', s.index('<manifest')) + 1
+              s = s[:pos] + '\n    <uses-permission android:name="android.permission.INTERNET" />' + s[pos:]
+          p.write_text(re.sub(r'android:label="[^"]*"', 'android:label="MarPatients Admin"', s, count=1))
           for source in Path('assets/icons').glob('mipmap-*/ic_launcher.png'):
               dest = Path('android/app/src/main/res') / source.parent.name / 'ic_launcher.png'
               dest.parent.mkdir(parents=True, exist_ok=True)
@@ -49,13 +40,22 @@ jobs:
       - name: Install dependencies
         working-directory: admin_app
         run: flutter pub get
+      - name: Validate Supabase configuration
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_PUBLISHABLE_KEY: ${{ secrets.SUPABASE_PUBLISHABLE_KEY }}
+        run: |
+          test -n "$SUPABASE_URL" || (echo 'SUPABASE_URL secret missing' && exit 1)
+          test -n "$SUPABASE_PUBLISHABLE_KEY" || (echo 'SUPABASE_PUBLISHABLE_KEY secret missing' && exit 1)
       - name: Build admin APK
         working-directory: admin_app
         env:
-          MAR_API_URL: ${{ vars.MAR_API_URL }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_PUBLISHABLE_KEY: ${{ secrets.SUPABASE_PUBLISHABLE_KEY }}
         run: |
-          if [ -z "$MAR_API_URL" ]; then echo "DEMO MODE: MAR_API_URL not set; changes stay on device"; fi
-          flutter build apk --release --dart-define=MAR_API_URL="$MAR_API_URL"
+          flutter build apk --release \
+            --dart-define=SUPABASE_URL="$SUPABASE_URL" \
+            --dart-define=SUPABASE_PUBLISHABLE_KEY="$SUPABASE_PUBLISHABLE_KEY"
       - name: Upload Admin APK
         uses: actions/upload-artifact@v4
         with:
