@@ -31,7 +31,7 @@ jobs:
           if 'android.permission.INTERNET' not in s:
               pos = s.index('>', s.index('<manifest')) + 1
               s = s[:pos] + '\n    <uses-permission android:name="android.permission.INTERNET" />' + s[pos:]
-          p.write_text(re.sub(r'android:label="[^"]*"', 'android:label="MarPatients Admin"', s, count=1))
+          p.write_text(re.sub(r'android:label="[^"]*"', 'android:label="MarshalA"', s, count=1))
           for source in Path('assets/icons').glob('mipmap-*/ic_launcher.png'):
               dest = Path('android/app/src/main/res') / source.parent.name / 'ic_launcher.png'
               dest.parent.mkdir(parents=True, exist_ok=True)
