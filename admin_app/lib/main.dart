@@ -1,11 +1,20 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'admin_api.dart';
+import 'supabase_admin_api.dart';
 
-void main() { WidgetsFlutterBinding.ensureInitialized(); runApp(const MarshalAdmin()); }
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  const url = String.fromEnvironment('SUPABASE_URL');
+  const key = String.fromEnvironment('SUPABASE_PUBLISHABLE_KEY');
+  if (url.isNotEmpty && key.isNotEmpty) {
+    await Supabase.initialize(url: url, anonKey: key);
+  }
+  runApp(const MarshalAdmin());
+}
 
 class Customer {
   final String code;
@@ -13,8 +22,8 @@ class Customer {
   bool medical, visible, active;
   Customer({required this.code, required this.name, required this.medical, this.visible = false, this.active = false});
   factory Customer.fromMap(Map<String, dynamic> m) => Customer(
-    code: '${m['code']}', name: '${m['name']}', medical: m['medical'] == true,
-    visible: m['visible'] == true, active: m['active'] == true);
+    code: '${m['customer_code']}', name: '${m['display_name']}', medical: m['is_medical'] == true,
+    visible: m['is_visible'] == true, active: m['is_active'] == true);
   Map<String, dynamic> toMap() => {'code': code, 'name': name, 'medical': medical, 'visible': visible, 'active': active};
 }
 
@@ -32,8 +41,8 @@ class AdminHome extends StatefulWidget { const AdminHome({super.key}); @override
 class _AdminHomeState extends State<AdminHome> {
   static const secure = FlutterSecureStorage();
   final pin = TextEditingController();
-  final ownerUsername = TextEditingController(text: 'owner');
-  final api = AdminApi();
+  final ownerUsername = TextEditingController();
+  final api = SupabaseAdminApi();
   bool get remoteMode => api.connected;
   final search = TextEditingController();
   List<Customer> customers = [];
@@ -86,7 +95,7 @@ class _AdminHomeState extends State<AdminHome> {
   Future<void> _setFlag(Customer c, {bool? visible, bool? active}) async {
     if (remoteMode) {
       try {
-        await api.updateTenant(c.code, {if (visible != null) 'visible': visible, if (active != null) 'active': active});
+        await api.updateTenant(c.code, {if (visible != null) 'is_visible': visible, if (active != null) 'is_active': active});
         await _refreshRemote();
         if (mounted) _message('تم حفظ التغيير على السيرفر');
       } catch (e) { if (mounted) _message(e.toString().replaceFirst('Exception: ', '')); }
@@ -108,7 +117,7 @@ class _AdminHomeState extends State<AdminHome> {
     final result = await showDialog<bool>(context: context, builder: (ctx) => StatefulBuilder(builder: (ctx, update) => AlertDialog(
       title: Text(item == null ? 'إضافة عميل' : 'تعديل العميل'),
       content: Column(mainAxisSize: MainAxisSize.min, children: [
-        TextField(controller: code, enabled: item == null, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'كود عميل Marshal')),
+        TextField(controller: code, enabled: item == null, decoration: const InputDecoration(labelText: 'كود عميل Marshal')),
         const SizedBox(height: 12), TextField(controller: name, decoration: const InputDecoration(labelText: 'اسم العميل')),
         SwitchListTile(title: const Text('منشأة طبية'), value: medical, onChanged: (v) => update(() => medical = v)),
       ]),
@@ -123,9 +132,9 @@ class _AdminHomeState extends State<AdminHome> {
     if (remoteMode) {
       try {
         if (item == null) {
-          await api.createTenant({'code': c, 'name': n, 'medical': medical, 'visible': false, 'active': false});
+          await api.createTenant({'customer_code': c, 'display_name': n, 'is_medical': medical, 'is_visible': false, 'is_active': false});
         } else {
-          await api.updateTenant(c, {'name': n, 'medical': medical});
+          await api.updateTenant(c, {'display_name': n, 'is_medical': medical});
         }
         await _refreshRemote();
         if (mounted) _message('تم حفظ العميل على السيرفر');
@@ -145,7 +154,7 @@ class _AdminHomeState extends State<AdminHome> {
         Image.asset('assets/marshal_logo.jpg', height: 86), const SizedBox(height: 12),
         const Text('MarPatients Admin', style: TextStyle(fontSize: 23, fontWeight: FontWeight.w800)),
         const SizedBox(height: 8), Text(remoteMode ? 'حساب المالك — التحقق عبر السيرفر' : (creatingPin ? 'إنشاء كلمة مرور المالك لأول مرة' : 'دخول المالك فقط'), style: const TextStyle(color: Colors.black54)),
-        if (remoteMode) ...[const SizedBox(height: 18), TextField(controller: ownerUsername, decoration: const InputDecoration(border: OutlineInputBorder(), labelText: 'اسم حساب المالك'))],
+        if (remoteMode) ...[const SizedBox(height: 18), TextField(controller: ownerUsername, decoration: const InputDecoration(border: OutlineInputBorder(), labelText: 'البريد الإلكتروني للمالك'))],
         const SizedBox(height: 20), TextField(controller: pin, obscureText: true, textInputAction: TextInputAction.done,
           onSubmitted: (_) => _unlock(), decoration: const InputDecoration(border: OutlineInputBorder(), labelText: 'كلمة مرور الإدارة')),
         const SizedBox(height: 14), SizedBox(width: double.infinity, child: FilledButton(onPressed: busy ? null : _unlock,
