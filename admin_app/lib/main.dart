@@ -252,7 +252,15 @@ class _AdminHomeState extends State<AdminHome> {
                 Text(c.name, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
                 Text('كود داخلي: ${c.code}', style: const TextStyle(fontSize: 11, color: Colors.black45))])),
               IconButton(tooltip: 'تعديل', icon: const Icon(Icons.edit_outlined), onPressed: () => _edit(item: c))]),
-            if (remoteMode && c.medical && c.active) ...[\n              const SizedBox(height: 6),\n              Align(alignment: Alignment.centerRight, child: OutlinedButton.icon(\n                onPressed: busy ? null : () => _issueActivation(c),\n                icon: const Icon(Icons.vpn_key_outlined),\n                label: const Text('إصدار رمز تفعيل السيرفر'),\n              )),\n            ],\n            const Divider(height: 18), Row(children: [
+            if (remoteMode && c.medical && c.active) ...[
+              const SizedBox(height: 6),
+              Align(alignment: Alignment.centerRight, child: OutlinedButton.icon(
+                onPressed: busy ? null : () => _issueActivation(c),
+                icon: const Icon(Icons.vpn_key_outlined),
+                label: const Text('إصدار رمز تفعيل السيرفر'),
+              )),
+            ],
+            const Divider(height: 18), Row(children: [
               Expanded(child: Row(children: [const Text('إظهار'), Switch(value: c.visible, onChanged: (v) => _setFlag(c, visible: v))])),
               Expanded(child: Row(children: [const Text('تفعيل'), Switch(value: c.active, onChanged: (v) => _setFlag(c, active: v))])),
             ]),
