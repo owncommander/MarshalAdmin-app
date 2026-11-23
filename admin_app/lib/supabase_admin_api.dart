@@ -40,11 +40,7 @@ class SupabaseAdminApi {
         params: {'p_customer_code': customerCode});
     final data = Map<String, dynamic>.from(result as Map);
     final code = data['activation_code']?.toString() ?? '';
-    if (!RegExp(r'^[0-9a-f]{64}
-    await client.auth.signOut();
-  }
-}
-).hasMatch(code)) {
+    if (code.length != 64 || !RegExp(r'^[0-9a-f]+$').hasMatch(code)) {
       throw Exception('استجابة رمز التفعيل غير صحيحة');
     }
     return data;
