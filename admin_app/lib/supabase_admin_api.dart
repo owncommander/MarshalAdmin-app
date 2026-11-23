@@ -32,6 +32,24 @@ class SupabaseAdminApi {
     await client.from('marshal_tenants').update(data).eq('customer_code', code);
   }
 
+  Future<Map<String, dynamic>> issueActivation(String customerCode) async {
+    if (!connected || client.auth.currentUser == null) {
+      throw Exception('يلزم تسجيل الدخول بحساب المالك');
+    }
+    final result = await client.rpc('marshal_owner_issue_activation',
+        params: {'p_customer_code': customerCode});
+    final data = Map<String, dynamic>.from(result as Map);
+    final code = data['activation_code']?.toString() ?? '';
+    if (!RegExp(r'^[0-9a-f]{64}
+    await client.auth.signOut();
+  }
+}
+).hasMatch(code)) {
+      throw Exception('استجابة رمز التفعيل غير صحيحة');
+    }
+    return data;
+  }
+
   Future<void> logout() async {
     await client.auth.signOut();
   }
