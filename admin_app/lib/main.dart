@@ -87,6 +87,62 @@ class _AdminHomeState extends State<AdminHome> {
       pin.clear();
     } finally { if (mounted) setState(() => busy = false); }
   }
+  Future<void> _issueActivation(Customer c) async {
+    if (!remoteMode || !c.medical || !c.active || busy) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('إصدار رمز تفعيل السيرفر'),
+        content: Text('إصدار رمز جديد للمجمع: ${c.name} (كود ${c.code})؟\n'
+            'الرمز صالح لمدة 30 دقيقة ويُستخدم مرة واحدة فقط.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('إلغاء')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('إصدار')),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    setState(() => busy = true);
+    try {
+      final data = await api.issueActivation(c.code);
+      if (!mounted) return;
+      final activationCode = data['activation_code'].toString();
+      final expiry = data['expires_at']?.toString() ?? '';
+      await showDialog<void>(
+        context: context,
+        barrierDismissible: false,
+        builder: (ctx) => AlertDialog(
+          title: const Text('رمز التفعيل — يُعرض مرة واحدة'),
+          content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text('${c.name} — ${c.code}'),
+            const SizedBox(height: 12),
+            SelectableText(activationCode, textDirection: TextDirection.ltr,
+                style: const TextStyle(fontFamily: 'monospace', fontSize: 13)),
+            const SizedBox(height: 10),
+            Text('ينتهي: $expiry', style: const TextStyle(fontSize: 12)),
+            const Text('لا تشارك الرمز إلا مع المسؤول عن سيرفر هذا المجمع.',
+                style: TextStyle(fontSize: 12)),
+          ]),
+          actions: [
+            TextButton.icon(
+              onPressed: () async {
+                await Clipboard.setData(ClipboardData(text: activationCode));
+                if (ctx.mounted) ScaffoldMessenger.of(ctx).showSnackBar(
+                  const SnackBar(content: Text('تم نسخ الرمز')));
+              },
+              icon: const Icon(Icons.copy), label: const Text('نسخ الرمز'),
+            ),
+            FilledButton(onPressed: () => Navigator.pop(ctx),
+                child: const Text('إغلاق')),
+          ],
+        ),
+      );
+    } catch (e) {
+      if (mounted) _message('تعذر إصدار الرمز: ${e.toString().replaceFirst('Exception: ', '')}');
+    } finally {
+      if (mounted) setState(() => busy = false);
+    }
+  }
   Future<void> _refreshRemote() async {
     if (!remoteMode) return;
     final rows = await api.listTenants();
@@ -196,7 +252,7 @@ class _AdminHomeState extends State<AdminHome> {
                 Text(c.name, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
                 Text('كود داخلي: ${c.code}', style: const TextStyle(fontSize: 11, color: Colors.black45))])),
               IconButton(tooltip: 'تعديل', icon: const Icon(Icons.edit_outlined), onPressed: () => _edit(item: c))]),
-            const Divider(height: 18), Row(children: [
+            if (remoteMode && c.medical && c.active) ...[\n              const SizedBox(height: 6),\n              Align(alignment: Alignment.centerRight, child: OutlinedButton.icon(\n                onPressed: busy ? null : () => _issueActivation(c),\n                icon: const Icon(Icons.vpn_key_outlined),\n                label: const Text('إصدار رمز تفعيل السيرفر'),\n              )),\n            ],\n            const Divider(height: 18), Row(children: [
               Expanded(child: Row(children: [const Text('إظهار'), Switch(value: c.visible, onChanged: (v) => _setFlag(c, visible: v))])),
               Expanded(child: Row(children: [const Text('تفعيل'), Switch(value: c.active, onChanged: (v) => _setFlag(c, active: v))])),
             ]),
